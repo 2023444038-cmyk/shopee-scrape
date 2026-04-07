@@ -1,9 +1,7 @@
 services:
   - type: web
     name: shopee-absa
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 2 --timeout 120
+    runtime: docker
     envVars:
       - key: MODEL_GDRIVE_ID
         sync: false
