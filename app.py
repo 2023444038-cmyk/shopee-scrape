@@ -30,7 +30,7 @@ if not TOKENIZER_PATH.exists() and TOKENIZER_GDRIVE_ID:
 # ─── LOAD MODEL ───────────────────────────────
 print("🚀 Loading model...")
 
-def custom_input_layer(config):
+def custom_input_layer(**config):
     # Remove incompatible parameters
     config.pop('batch_shape', None)
     config.pop('optional', None)
@@ -38,16 +38,23 @@ def custom_input_layer(config):
     config.pop('ragged', None)
     return tf.keras.layers.InputLayer(**config)
 
-def custom_attention_loader(config):
+def custom_attention_loader(**config):
     # Handle score_mode compatibility
     if 'score_mode' in config and not isinstance(config['score_mode'], str):
         config['score_mode'] = 'dot'
     return tf.keras.layers.Attention(**config)
 
-def custom_embedding_loader(config):
+def custom_embedding_loader(**config):
     # Remove newer parameters that older Keras doesn't recognize
     config.pop('quantization_config', None)
     return tf.keras.layers.Embedding(**config)
+
+# Register custom layer loaders globally to ensure nested deserialization works
+tf.keras.utils.get_custom_objects().update({
+    'InputLayer': custom_input_layer,
+    'Attention': custom_attention_loader,
+    'Embedding': custom_embedding_loader
+})
 
 try:
     model = tf.keras.models.load_model(
