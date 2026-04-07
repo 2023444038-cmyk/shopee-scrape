@@ -26,20 +26,30 @@ if not TOKENIZER_PATH.exists() and TOKENIZER_GDRIVE_ID:
     print("Tokenizer tidak dijumpai. Memuat turun dari Google Drive...")
     gdown.download(id=TOKENIZER_GDRIVE_ID, output=str(TOKENIZER_PATH), quiet=False)
 
-# ─── Load model & tokenizer (FIXED KERAS ISSUE) ───────────────────
+# ─── Load model & tokenizer ───────────────────
 print("Memuatkan model dan tokenizer...")
 
+import tensorflow as tf
+
+# Define a custom loader to handle the "score_mode" function issue
+def custom_attention_loader(config):
+    # If config contains a function for score_mode, convert it to a string
+    if 'score_mode' in config and not isinstance(config['score_mode'], str):
+        config['score_mode'] = 'dot'
+    return tf.keras.layers.Attention(**config)
+
 try:
-    model = load_model(str(MODEL_PATH))
-except TypeError:
-    import tensorflow as tf
-    print("Fallback: loading model with safe_mode=False...")
+    # Use custom_objects to intercept the 'Attention' layer deserialization
     model = tf.keras.models.load_model(
         str(MODEL_PATH),
-        custom_objects=None,
-        compile=False,
-        safe_mode=False
+        custom_objects={'Attention': custom_attention_loader},
+        compile=False
     )
+    print("Model berjaya dimuatkan dengan custom loader.")
+except Exception as e:
+    print(f"Percubaan pertama gagal: {e}")
+    # Fallback: force Keras to ignore the config mismatch
+    model = tf.keras.models.load_model(str(MODEL_PATH), compile=False, safe_mode=False)
 
 with open(str(TOKENIZER_PATH), 'rb') as f:
     tokenizer = pickle.load(f)
