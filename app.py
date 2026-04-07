@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 from flask import Flask, render_template, request, flash, jsonify
 from flask_cors import CORS
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from shopee_scrapper import scrape_shopee_bulk
 
@@ -26,29 +26,35 @@ if not TOKENIZER_PATH.exists() and TOKENIZER_GDRIVE_ID:
     print("Tokenizer tidak dijumpai. Memuat turun dari Google Drive...")
     gdown.download(id=TOKENIZER_GDRIVE_ID, output=str(TOKENIZER_PATH), quiet=False)
 
-# ─── Load model & tokenizer ───────────────────
+# ─── Load model & tokenizer (FIXED VERSION) ───────────────────
 print("Memuatkan model dan tokenizer...")
 
-import tensorflow as tf
+# Function to clean InputLayer config (Fixes 'batch_shape' error)
+def custom_input_layer(config):
+    config.pop('batch_shape', None)
+    config.pop('optional', None)
+    return tf.keras.layers.InputLayer(**config)
 
-# Define a custom loader to handle the "score_mode" function issue
+# Function to clean Attention config (Fixes 'score_mode' error)
 def custom_attention_loader(config):
-    # If config contains a function for score_mode, convert it to a string
     if 'score_mode' in config and not isinstance(config['score_mode'], str):
         config['score_mode'] = 'dot'
     return tf.keras.layers.Attention(**config)
 
 try:
-    # Use custom_objects to intercept the 'Attention' layer deserialization
+    # Use custom_objects to fix BOTH the InputLayer and Attention issues
     model = tf.keras.models.load_model(
         str(MODEL_PATH),
-        custom_objects={'Attention': custom_attention_loader},
+        custom_objects={
+            'InputLayer': custom_input_layer,
+            'Attention': custom_attention_loader
+        },
         compile=False
     )
-    print("Model berjaya dimuatkan dengan custom loader.")
+    print("✅ Model berjaya dimuatkan dengan custom objects.")
 except Exception as e:
-    print(f"Percubaan pertama gagal: {e}")
-    # Fallback: force Keras to ignore the config mismatch
+    print(f"❌ Error loading model: {e}")
+    # Final fallback attempt
     model = tf.keras.models.load_model(str(MODEL_PATH), compile=False, safe_mode=False)
 
 with open(str(TOKENIZER_PATH), 'rb') as f:
@@ -78,7 +84,6 @@ malay_slang = {
     "ok": "elok", "okey": "elok", "laju": "cepat"
 }
 
-
 def clean_text(text):
     if not isinstance(text, str):
         return ""
@@ -88,7 +93,6 @@ def clean_text(text):
     words = text.split()
     words = [malay_slang.get(w, w) for w in words]
     return " ".join(words)
-
 
 def run_prediction(scraped_data):
     valid_data = [item for item in scraped_data if str(item.get('review', '')).strip()]
@@ -159,11 +163,9 @@ def run_prediction(scraped_data):
         "positive_pct": round((len([s for s in stars if s >= 4]) / total_reviews) * 100)
     }, None
 
-
 @app.route("/")
 def home():
     return render_template("index.html")
-
 
 @app.route("/predict_url", methods=["POST"])
 def predict_url():
@@ -189,7 +191,6 @@ def predict_url():
 
     return render_template("index.html", url=url, limit_selected=limit_val, **result)
 
-
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
     data = request.get_json()
@@ -209,11 +210,9 @@ def api_predict():
 
     return jsonify(result)
 
-
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "model_loaded": model is not None})
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
