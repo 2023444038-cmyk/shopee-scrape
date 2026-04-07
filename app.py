@@ -14,8 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / 'absa_kipas_model.h5'
 TOKENIZER_PATH = BASE_DIR / 'tokenizer.pickle'
 
-# ─── Auto-download model from Google Drive if not found ───────────────────────
-# Upload absa_kipas_model.h5 ke Google Drive, share publicly, letak ID di sini
+# ─── Auto-download model from Google Drive ───────────────────────
 MODEL_GDRIVE_ID = os.environ.get("MODEL_GDRIVE_ID", "")
 TOKENIZER_GDRIVE_ID = os.environ.get("TOKENIZER_GDRIVE_ID", "")
 
@@ -27,9 +26,21 @@ if not TOKENIZER_PATH.exists() and TOKENIZER_GDRIVE_ID:
     print("Tokenizer tidak dijumpai. Memuat turun dari Google Drive...")
     gdown.download(id=TOKENIZER_GDRIVE_ID, output=str(TOKENIZER_PATH), quiet=False)
 
-# ─── Load model & tokenizer ───────────────────────────────────────────────────
+# ─── Load model & tokenizer (FIXED KERAS ISSUE) ───────────────────
 print("Memuatkan model dan tokenizer...")
-model = load_model(str(MODEL_PATH))
+
+try:
+    model = load_model(str(MODEL_PATH))
+except TypeError:
+    import tensorflow as tf
+    print("Fallback: loading model with safe_mode=False...")
+    model = tf.keras.models.load_model(
+        str(MODEL_PATH),
+        custom_objects=None,
+        compile=False,
+        safe_mode=False
+    )
+
 with open(str(TOKENIZER_PATH), 'rb') as f:
     tokenizer = pickle.load(f)
 
@@ -70,7 +81,6 @@ def clean_text(text):
 
 
 def run_prediction(scraped_data):
-    """Core ABSA prediction logic — shared by HTML and JSON routes."""
     valid_data = [item for item in scraped_data if str(item.get('review', '')).strip()]
     if not valid_data:
         return None, "Tiada ulasan bertulis dijumpai."
@@ -140,8 +150,6 @@ def run_prediction(scraped_data):
     }, None
 
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -149,7 +157,6 @@ def home():
 
 @app.route("/predict_url", methods=["POST"])
 def predict_url():
-    """HTML form route — returns rendered template."""
     url = request.form.get("shopee_url", "").strip()
     limit_val = request.form.get("review_limit", "100")
     total_wanted = int(limit_val)
@@ -175,7 +182,6 @@ def predict_url():
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    """JSON API route — untuk frontend / widget eksternal."""
     data = request.get_json()
     url = (data or {}).get("shopee_url", "").strip()
     total_wanted = int((data or {}).get("review_limit", 100))
