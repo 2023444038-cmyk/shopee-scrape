@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: shopee-absa
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 120
+    envVars:
+      - key: MODEL_GDRIVE_ID
+        sync: false
+      - key: TOKENIZER_GDRIVE_ID
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
